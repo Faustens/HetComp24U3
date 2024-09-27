@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+################################################## MYSQL
+# mySQL DB for storing weather data
+  weather_db:
+    image: michaelkilian/arm32v7-mariadb-alpine
+    restart: always
+    container_name: weather_db
+    environment:
+      MYSQL_ROOT_PASSWORD: RootPassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./db/data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d
+    networks:
+      - my_network
+################################################## MQTT
+# Mosquitto MQTT broker
+  mqtt5:
+    image: eclipse-mosquitto
+    container_name: mqtt5
+    ports:
+      - "10883:1883" #mqtt port
+      - "9001:9001" #default mqtt port for websockets
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:rw
+      - ./mosquitto/data:/mosquitto/data:rw
+      - ./mosquitto/log:/mosquitto/log:rw
+    restart: unless-stopped
+    networks:
+      - my_network
+
+################################################## PYTHON
+# Python Script to put weather data into db
+  weather_data_ingest:
+    build:
+      context: ./python-script
+      dockerfile: Dockerfile
+    container_name: weather_data_ingest
+    depends_on:
+      - weather_db
+      - mqtt5
+    networks:
+      - my_network
+
+################################################## API
+# Node.js Backend API for data access
+  weather_api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: weather_api
+    ports:
+      - "3000:3000"  # API auf localhost:3000 verfügbar machen
+    environment:
+      - DB_HOST=weather_db
+      - DB_USER=root
+      - DB_PASSWORD=tilliMon125
+      - DB_NAME=weather_db
+    depends_on:
+      - weather_db
+    networks:
+      - my_network
+################################################## WEB-UI
+  web-ui:
+    build:
+      context: ./web-ui
+      dockerfile: Dockerfile
+    container_name: weather_web-ui
+    ports:
+      - "8080:80"
+    restart: always
+    depends_on:
+      - weather_api
+    networks:
+      - my_network
+
+networks:
+  my_network:
